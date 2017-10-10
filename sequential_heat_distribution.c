@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <omp.h>
 
-#define EPSILON 1e-3
+#define EPSILON 5e-2
 
 
 void write_output(int num_lines, double **result) {
@@ -21,6 +22,9 @@ void write_output(int num_lines, double **result) {
 int main(int argc, char **argv) {
     char str[10];
     int num_lines, i, j;
+    double start, end, time;
+    start = omp_get_wtime();
+
     FILE *input = fopen("input.dat", "r");
     if (!input) {
         printf("File read error");
@@ -82,4 +86,8 @@ int main(int argc, char **argv) {
         printf("%d %f\n", num_iter, max_change);
     }
     write_output(num_lines, result);
+
+    end = omp_get_wtime();
+    time = end - start;
+    printf("%lf", time);
 }
