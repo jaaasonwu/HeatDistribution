@@ -22,7 +22,7 @@ void write_output(int num_lines, double **result) {
 int main(int argc, char **argv) {
     char str[10];
     int num_lines, i, j;
-    double start, end, time, diff, my_diff;
+    double start, end, time;
     start = omp_get_wtime();
     FILE *input = fopen("input.dat", "r");
     if (!input) {
@@ -56,69 +56,67 @@ int main(int argc, char **argv) {
         }
     }
 
-    double **prev;
-    prev = malloc(sizeof(double *) * num_lines);
-    for (i = 0; i < num_lines; i++) {
-        prev[i] = malloc(sizeof(double) * num_lines);
-    }
 
-    double max_change = 1;
+    double max_change = 1, max_black, max_red;
     int num_iter = 0;
-//    omp_set_num_threads(2);
     // Stop when the change of all points is smaller than the EPSILON
+
     while (max_change > EPSILON) {
         num_iter++;
         max_change = 0;
+        max_black = 0;
+        max_red = 0;
+#pragma omp parallel for shared (result) private (i, j) reduction(max: max_red)
+        // Calculate all the red dots
+        for (i = 0; i < num_lines; i++) {
+            j = i % 2 == 0 ? 0 : 1;
+            for (; j < num_lines; j += 2) {
+                // Only calculate the point without an initial value
+                if (data[i][j] == 0) {
+                    // Set the point next to the current point to be 0 if the point is on boundary
+                    double left, right, up, down, diff, prev;
+                    left = i - 1 < 0 ? 0 : result[i - 1][j];
+                    right = i + 1 >= num_lines ? 0 : result[i + 1][j];
+                    up = j - 1 < 0 ? 0 : result[i][j - 1];
+                    down = j + 1 >= num_lines ? 0 : result[i][j + 1];
 
-#pragma omp parallel shared (result, prev) private ( i, j )
-        {
-#pragma omp for
-            for (i = 0; i < num_lines; i++) {
-                for (j = 0; j < num_lines; j++) {
-                    prev[i][j] = result[i][j];
-                }
-            }
-#pragma omp for
-            for (i = 0; i < num_lines; i++) {
-                for (j = 0; j < num_lines; j++) {
-                    // Only calculate the point without an initial value
-                    if (data[i][j] == 0) {
-                        // Set the point next to the current point to be 0 if the point is on boundary
-                        double left, right, up, down, diff;
-                        left = i - 1 < 0 ? 0 : prev[i - 1][j];
-                        right = i + 1 >= num_lines ? 0 : prev[i + 1][j];
-                        up = j - 1 < 0 ? 0 : prev[i][j - 1];
-                        down = j + 1 >= num_lines ? 0 : prev[i][j + 1];
+                    prev = result[i][j];
+                    result[i][j] = 0.25 * (left + right + up + down);
 
-                        result[i][j] = 0.25 * (left + right + up + down);
+                    diff = fabs(prev - result[i][j]);
+                    if (diff > max_red) {
+                        max_red = diff;
                     }
                 }
             }
         }
 
+#pragma omp parallel for shared(result) private(i, j) reduction(max:max_black)
+        // calculate all the black dots
+        for (i = 0; i < num_lines; i++) {
+            j = i % 2 == 0 ? 1 : 0;
+            for (; j < num_lines; j += 2) {
+                // Only calculate the point without an initial value
+                if (data[i][j] == 0) {
+                    // Set the point next to the current point to be 0 if the point is on boundary
+                    double left, right, up, down, diff, prev;
+                    left = i - 1 < 0 ? 0 : result[i - 1][j];
+                    right = i + 1 >= num_lines ? 0 : result[i + 1][j];
+                    up = j - 1 < 0 ? 0 : result[i][j - 1];
+                    down = j + 1 >= num_lines ? 0 : result[i][j + 1];
 
-# pragma omp parallel shared ( diff, result, prev ) private ( i, j, my_diff )
-        {
-#pragma omp for
-            for ( i = 0; i < num_lines; i++ )
-            {
-                for ( j = 0; j < num_lines; j++ )
-                {
-                    if (my_diff < fabs(prev[i][j] - result[i][j]))
-                    {
-                        my_diff = fabs ( prev[i][j] - result[i][j] );
+                    prev = result[i][j];
+                    result[i][j] = 0.25 * (left + right + up + down);
+
+                    diff = fabs(prev - result[i][j]);
+                    if (diff > max_black) {
+                        max_black = diff;
                     }
-                }
-            }
-# pragma omp critical
-            {
-                if ( max_change < my_diff )
-                {
-                    max_change = my_diff;
                 }
             }
         }
 
+        max_change = max_black > max_red ? max_black : max_red;
         printf("%d %f\n", num_iter, max_change);
     }
     write_output(num_lines, result);

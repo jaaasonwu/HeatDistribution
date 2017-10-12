@@ -1,5 +1,10 @@
+import sys
+
 #output_size
-n = 1000
+if len(sys.argv) == 1:
+    print("No array size provided")
+    sys.exit()
+n = int(sys.argv[1])
 
 file = open("input.dat", "w", -1)
 
