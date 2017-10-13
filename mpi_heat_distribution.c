@@ -15,7 +15,7 @@
 #define ROW            7
 #define RESULT        8                          /* message tag */
 #define MAXITER     10              /* maximum iterations to go through */
-#define EPSILON    5e-2
+#define EPSILON    5e-1
 
 
 double **alloc_2d_double(int rows, int cols);
@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
         // if (left != NONE)
         // {
         // 		// send the first row of the worker's partition to the left neighbour
-        // 	MPI_Send(&local_data[1][0], 1,rowtype, left, RTAG, MPI_COMM_WORLD);
+        // 	MPI_Bsend(&local_data[1][0], 1,rowtype, left, RTAG, MPI_COMM_WORLD);
         // 	source = left;
         // 	msgtype = LTAG;
         // 		// receive from left neighbour
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
         // }
         // if (right != NONE)
         // {
-        // 	MPI_Send(&local_data[rows][0], 1,rowtype, right, LTAG, MPI_COMM_WORLD);
+        // 	MPI_Bsend(&local_data[rows][0], 1,rowtype, right, LTAG, MPI_COMM_WORLD);
         // 	source = right;
         // 	msgtype = RTAG;
         // 	MPI_Recv(&local_data[rows+1][0], 1, rowtype, source,msgtype, MPI_COMM_WORLD, &Stat);
@@ -182,26 +182,27 @@ int main(int argc, char *argv[]) {
         int num_iter = 0;
 
         //while(!converged)
+        MPI_Buffer_attach(malloc(4 * size * sizeof(double)), 4 * size * sizeof(double));
         while (1) {
             num_iter++;
 //			printf("iter: %d\n", num_iter);
             if (left != NONE) {
                 // send the first row of the worker's partition to the left neighbour
-                MPI_Send(&local_data[1][0], 1, rowtype, left, RTAG, MPI_COMM_WORLD);
+                MPI_Bsend(&local_data[1][0], 1, rowtype, left, RTAG, MPI_COMM_WORLD);
                 source = left;
                 msgtype = LTAG;
                 // receive from left neighbour
-                MPI_Send(&converged, 1, MPI_INT, source, CONVERGE, MPI_COMM_WORLD);
+                MPI_Bsend(&converged, 1, MPI_INT, source, CONVERGE, MPI_COMM_WORLD);
                 if (!(left_converged == 1 && converged == 1)) {
                     MPI_Recv(&local_data[0][0], 1, rowtype, source, msgtype, MPI_COMM_WORLD, &Stat);
                     MPI_Recv(&left_converged, 1, MPI_INT, source, CONVERGE, MPI_COMM_WORLD, &Stat);
                 }
             }
             if (right != NONE) {
-                MPI_Send(&local_data[rows][0], 1, rowtype, right, LTAG, MPI_COMM_WORLD);
+                MPI_Bsend(&local_data[rows][0], 1, rowtype, right, LTAG, MPI_COMM_WORLD);
                 source = right;
                 msgtype = RTAG;
-                MPI_Send(&converged, 1, MPI_INT, source, CONVERGE, MPI_COMM_WORLD);
+                MPI_Bsend(&converged, 1, MPI_INT, source, CONVERGE, MPI_COMM_WORLD);
                 if (!(right_converged == 1 && converged == 1)) {
                     MPI_Recv(&local_data[rows + 1][0], 1, rowtype, source, msgtype, MPI_COMM_WORLD,
                              &Stat);
@@ -209,7 +210,7 @@ int main(int argc, char *argv[]) {
                 }
             }
             if (converged && left_converged && right_converged) {
-                MPI_Send(&converged, 1, MPI_INT, MASTER, TERMINATION, MPI_COMM_WORLD);
+                MPI_Bsend(&converged, 1, MPI_INT, MASTER, TERMINATION, MPI_COMM_WORLD);
                 break;
             } else {
                 //only update the first to the second-last row in the local data
@@ -307,7 +308,7 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols) {
 	printf("max_change: %f\n",max_change);
     if (max_change <= EPSILON) {
 //		int msg = 1;
-//		MPI_Send(&msg, 1, MPI_INT, MASTER, TERMINATION, MPI_COMM_WORLD);
+//		MPI_Bsend(&msg, 1, MPI_INT, MASTER, TERMINATION, MPI_COMM_WORLD);
         return 1;
     } else {
         return 0;
