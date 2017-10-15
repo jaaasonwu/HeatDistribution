@@ -3,7 +3,7 @@
 #include <math.h>
 #include <omp.h>
 
-#define EPSILON 5e-2
+#define EPSILON 1e-3
 
 
 void write_output(int num_lines, double **result) {
