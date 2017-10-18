@@ -8,7 +8,7 @@
 
 void write_output(int num_lines, double **result) {
     int i, j;
-    FILE *output = fopen("output.dat", "w");
+    FILE *output = fopen("seq_output.dat", "w");
     fprintf(output, "%d\n", num_lines);
     for (i = 0; i < num_lines; i++) {
         for (j = 0; j < num_lines; j++) {
@@ -25,7 +25,11 @@ int main(int argc, char **argv) {
     double start, end, time;
     start = omp_get_wtime();
 
-    FILE *input = fopen("input.dat", "r");
+    if (argc == 1) {
+        printf("Missing input file");
+        exit(EXIT_FAILURE);
+    }
+    FILE *input = fopen(argv[1], "r");
     if (!input) {
         printf("File read error");
         exit(EXIT_FAILURE);
@@ -83,7 +87,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        printf("%d %f\n", num_iter, max_change);
+//        printf("%d %f\n", num_iter, max_change);
     }
     write_output(num_lines, result);
 

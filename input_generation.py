@@ -1,12 +1,12 @@
 import sys
 
 #output_size
-if len(sys.argv) == 1:
-    print("No array size provided")
+if len(sys.argv) < 2:
+    print("Usage: python input_generation.py size outputFile")
     sys.exit()
 n = int(sys.argv[1])
 
-file = open("input.dat", "w", -1)
+file = open(sys.argv[2], "w", -1)
 
 file.write("{0}\n".format(n))
 for i in range(n):

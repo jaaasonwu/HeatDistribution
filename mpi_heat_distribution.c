@@ -45,7 +45,11 @@ int main(int argc, char *argv[]) {
     MPI_Request recv_request;
 
     char str[10];
-    FILE *input = fopen("input.dat", "r");
+    if (argc == 1) {
+        printf("Missing input file");
+        exit(EXIT_FAILURE);
+    }
+    FILE *input = fopen(argv[1], "r");
     if (!input) {
         printf("File read error");
         exit(EXIT_FAILURE);
@@ -70,15 +74,6 @@ int main(int argc, char *argv[]) {
 
     /************************* master code *******************************/
     if (rank == MASTER) {
-//#pragma omp parallel num_threads(2)
-//        {
-//            int thread = omp_get_thread_num();
-//            if (thread == 0) {
-//                master(data, size, numworkers, rowtype);
-//            } else if (thread == 1){
-//                worker(data, size, numworkers, rank, rowtype);
-//            }
-//        }
         master(data, size, numworkers, rowtype);
     }
     /************************* workers code **********************************/
@@ -94,18 +89,10 @@ int main(int argc, char *argv[]) {
 
 void master(double **data, int size, int numworkers, MPI_Datatype rowtype) {
     int source, msgtype, msg, rows, offset, i;
-//#pragma omp parallel private(rows,offset,source,msgtype,msg) shared(data)
-//    {
-//#pragma omp for
-    for (i = 1; i<=numworkers; i++)
-        {
-            source = i;
-            msgtype = TERMINATION;
-            MPI_Recv(&msg, 1, MPI_INT, source, msgtype, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-
+#pragma omp parallel private(rows,offset,source,msgtype,msg) shared(data)
+    {
         /* wait for results from all worker tasks */
-//#pragma omp for
+#pragma omp for
         for (i=1; i<=numworkers; i++)
         {
             source = i;
@@ -114,7 +101,7 @@ void master(double **data, int size, int numworkers, MPI_Datatype rowtype) {
             MPI_Recv(&data[offset][0], rows, rowtype, source,
                      RESULT, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
-//    }
+    }
     /* All threads join master thread */
     /* Write final output */
     write_output(size, data);
@@ -241,7 +228,6 @@ void worker(double **data, int size, int numworkers, int rank, MPI_Datatype rowt
         }
 
         if (status==2) {
-            MPI_Ssend(&status, 1, MPI_INT, MASTER, TERMINATION, MPI_COMM_WORLD);
             break;
         }
 
@@ -338,7 +324,7 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols, i
 
 void write_output(int size, double **result) {
     int i, j;
-    FILE *output = fopen("output.dat", "w");
+    FILE *output = fopen("mpi_output.dat", "w");
     fprintf(output, "%d\n", size);
     for (i = 0; i < size; i++) {
         for (j = 0; j < size; j++) {
