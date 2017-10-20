@@ -15,16 +15,16 @@
 #define ROW            7
 #define RESULT        8                          /* message tag */
 #define MAXITER     10              /* maximum iterations to go through */
-#define EPSILON    1e-3
 
 
 double **alloc_2d_double(int rows, int cols);
 
-int dowork(double **data, double **local_data, int offset, int rows, int cols,int rank);
+int dowork(double **data, double **local_data, int offset, int rows, int cols,int rank, double epsilon);
 void print_2d_array(double **A, int rows, int cols);
-void write_output(int size, double **result);
-void master(double **data, int size, int numworkers, MPI_Datatype rowtype);
-void worker(double **data, int size, int numworkers, int rank, MPI_Datatype rowtype);
+void write_output(int size, double **result, char *output_file);
+void master(double **data, int size, int numworkers, MPI_Datatype rowtype, char *output_file);
+void worker(double **data, int size, double epsilon, int numworkers, int rank,
+            MPI_Datatype rowtype);
 
 int main(int argc, char *argv[]) {
     int world_size, rank, numworkers;
@@ -34,7 +34,9 @@ int main(int argc, char *argv[]) {
     int size = 0;
     int i, j;
     double **data;
+    double epsilon;
     double start = omp_get_wtime();
+    char *output_file;
 
     // Initializes the MPI execution environment
     int provided;
@@ -45,28 +47,33 @@ int main(int argc, char *argv[]) {
     MPI_Request recv_request;
 
     char str[10];
-    if (argc == 1) {
-        printf("Missing input file");
+    if (argc != 4) {
+        printf("Incorrect arguments. Should have one argument for size, one for epsilon and one for output.");
         exit(EXIT_FAILURE);
     }
-    FILE *input = fopen(argv[1], "r");
-    if (!input) {
-        printf("File read error");
-        exit(EXIT_FAILURE);
-    }
-    fgets(str, sizeof(str), input);
-    size = atoi(str);
+    size = atoi(argv[1]);
+    epsilon = atof(argv[2]);
+    output_file = argv[3];
 
     // Initialize the array to store the original data				
     data = alloc_2d_double(size, size);
 
-    // Read the file
+    // Initialize the input
     for (i = 0; i < size; i++) {
-        for (j = 0; j < size; j++) {
-            fscanf(input, "%lf ", &(data[i][j]));
+        if (i < size / 5) {
+            for (j = 0; j < size; j++) {
+                data[i][j] = 100;
+            }
+        } else {
+            for (j = 0; j < size; j++) {
+                if (j > size / 5 * 2 && j < size / 5 * 3) {
+                    data[i][j] = 100;
+                } else {
+                    data[i][j] = 0;
+                }
+            }
         }
     }
-    fclose(input);
 
     MPI_Type_vector(1, size, 1, MPI_DOUBLE, &rowtype);
     MPI_Type_commit(&rowtype);
@@ -74,11 +81,11 @@ int main(int argc, char *argv[]) {
 
     /************************* master code *******************************/
     if (rank == MASTER) {
-        master(data, size, numworkers, rowtype);
+        master(data, size, numworkers, rowtype, output_file);
     }
     /************************* workers code **********************************/
     if (rank != MASTER) {
-        worker(data, size, numworkers, rank, rowtype);
+        worker(data, size, epsilon, numworkers, rank, rowtype);
     }
 
     MPI_Finalize();
@@ -87,7 +94,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void master(double **data, int size, int numworkers, MPI_Datatype rowtype) {
+void master(double **data, int size, int numworkers, MPI_Datatype rowtype, char *output_file) {
     int source, msgtype, msg, rows, offset, i;
 #pragma omp parallel private(rows,offset,source,msgtype,msg) shared(data)
     {
@@ -104,10 +111,11 @@ void master(double **data, int size, int numworkers, MPI_Datatype rowtype) {
     }
     /* All threads join master thread */
     /* Write final output */
-    write_output(size, data);
+    write_output(size, data, output_file);
 }
 
-void worker(double **data, int size, int numworkers, int rank, MPI_Datatype rowtype) {
+void worker(double **data, int size, double epsilon, int numworkers, int rank,
+            MPI_Datatype rowtype) {
     int status,left_status,right_status;    // status 0: not converged
                                             // status 1: converged, but termination condition not met
                                             // status 2: termination condition met
@@ -178,9 +186,8 @@ void worker(double **data, int size, int numworkers, int rank, MPI_Datatype rowt
                              MPI_STATUS_IGNORE);
                 }
             }
-        } else
+        } else {
             // For the nodes with odd rank, first communicate with right then left
-        {
             if (right != NONE) {
                 if (right_status!=2) {
                     MPI_Bsend(&local_data[rows][0], 1, rowtype, right, LTAG, MPI_COMM_WORLD);
@@ -198,7 +205,7 @@ void worker(double **data, int size, int numworkers, int rank, MPI_Datatype rowt
 
 
         //only update the first to the second-last row in the local data
-        if(dowork(data, local_data, offset, rows, size, rank) && !status ){
+        if(dowork(data, local_data, offset, rows, size, rank, epsilon) && !status ){
             status = 1;
         }
 
@@ -260,7 +267,7 @@ void print_2d_array(double **A, int rows, int cols) {
     }
 }
 
-int dowork(double **data, double **local_data, int offset, int rows, int cols, int rank) {
+int dowork(double **data, double **local_data, int offset, int rows, int cols, int rank, double epsilon) {
     double max_change, max_black, max_red;
     max_change = 1;
     max_black = 0;
@@ -270,6 +277,7 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols, i
 
 #pragma omp parallel for shared (data,local_data) private (i, j) reduction(max: max_red)
     for (i = 1; i <= rows; i++) {
+        // Calculate all the red points
         j = i % 2 == 0 ? 0 : 1;
         for (; j < cols; j += 2) {
             // Only calculate the point without an initial value
@@ -292,6 +300,7 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols, i
 
 #pragma omp parallel for shared (data,local_data) private (i, j) reduction(max: max_black)
     for (i = 1; i <= rows; i++) {
+        // Calculate all the black points
         j = i % 2 == 0 ? 1 : 0;
         for (; j < cols; j += 2) {
             // Only calculate the point without an initial value
@@ -314,7 +323,7 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols, i
 
     max_change = max_black > max_red ? max_black : max_red;
 //    printf("rank: %d, max_change: %f\n",rank,max_change);
-    if (max_change <= EPSILON) {
+    if (max_change <= epsilon) {
         return 1;
     } else {
         return 0;
@@ -322,9 +331,9 @@ int dowork(double **data, double **local_data, int offset, int rows, int cols, i
 
 }
 
-void write_output(int size, double **result) {
+void write_output(int size, double **result, char *output_file) {
     int i, j;
-    FILE *output = fopen("mpi_output.dat", "w");
+    FILE *output = fopen(output_file, "w");
     fprintf(output, "%d\n", size);
     for (i = 0; i < size; i++) {
         for (j = 0; j < size; j++) {
