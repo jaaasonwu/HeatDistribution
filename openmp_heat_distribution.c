@@ -3,12 +3,12 @@
 #include <math.h>
 #include <omp.h>
 
-#define EPSILON 1e-3
+#define EPSILON 5e-2
 
 
 void write_output(int num_lines, double **result) {
     int i, j;
-    FILE *output = fopen("seq_output.dat", "w");
+    FILE *output = fopen("omp_output.dat", "w");
     fprintf(output, "%d\n", num_lines);
     for (i = 0; i < num_lines; i++) {
         for (j = 0; j < num_lines; j++) {
@@ -24,7 +24,6 @@ int main(int argc, char **argv) {
     int num_lines, i, j;
     double start, end, time;
     start = omp_get_wtime();
-
     if (argc == 1) {
         printf("Missing input file");
         exit(EXIT_FAILURE);
@@ -61,19 +60,25 @@ int main(int argc, char **argv) {
         }
     }
 
-    double max_change = 1;
+
+    double max_change = 1, max_black, max_red;
     int num_iter = 0;
     // Stop when the change of all points is smaller than the EPSILON
+
     while (max_change > EPSILON) {
         num_iter++;
         max_change = 0;
-
+        max_black = 0;
+        max_red = 0;
+#pragma omp parallel for shared (result) private (i, j) reduction(max: max_red)
+        // Calculate all the red dots
         for (i = 0; i < num_lines; i++) {
-            for (j = 0; j < num_lines; j++) {
+            j = i % 2 == 0 ? 0 : 1;
+            for (; j < num_lines; j += 2) {
                 // Only calculate the point without an initial value
                 if (data[i][j] == 0) {
                     // Set the point next to the current point to be 0 if the point is on boundary
-                    double left, right, up, down, prev, diff;
+                    double left, right, up, down, diff, prev;
                     left = i - 1 < 0 ? 0 : result[i - 1][j];
                     right = i + 1 >= num_lines ? 0 : result[i + 1][j];
                     up = j - 1 < 0 ? 0 : result[i][j - 1];
@@ -81,16 +86,44 @@ int main(int argc, char **argv) {
 
                     prev = result[i][j];
                     result[i][j] = 0.25 * (left + right + up + down);
-                    // Get the changes between two iterations and update the max_change
+
                     diff = fabs(prev - result[i][j]);
-                    max_change = diff > max_change ? diff : max_change;
+                    if (diff > max_red) {
+                        max_red = diff;
+                    }
                 }
             }
         }
+
+#pragma omp parallel for shared(result) private(i, j) reduction(max:max_black)
+        // calculate all the black dots
+        for (i = 0; i < num_lines; i++) {
+            j = i % 2 == 0 ? 1 : 0;
+            for (; j < num_lines; j += 2) {
+                // Only calculate the point without an initial value
+                if (data[i][j] == 0) {
+                    // Set the point next to the current point to be 0 if the point is on boundary
+                    double left, right, up, down, diff, prev;
+                    left = i - 1 < 0 ? 0 : result[i - 1][j];
+                    right = i + 1 >= num_lines ? 0 : result[i + 1][j];
+                    up = j - 1 < 0 ? 0 : result[i][j - 1];
+                    down = j + 1 >= num_lines ? 0 : result[i][j + 1];
+
+                    prev = result[i][j];
+                    result[i][j] = 0.25 * (left + right + up + down);
+
+                    diff = fabs(prev - result[i][j]);
+                    if (diff > max_black) {
+                        max_black = diff;
+                    }
+                }
+            }
+        }
+
+        max_change = max_black > max_red ? max_black : max_red;
 //        printf("%d %f\n", num_iter, max_change);
     }
     write_output(num_lines, result);
-
     end = omp_get_wtime();
     time = end - start;
     printf("%lf", time);

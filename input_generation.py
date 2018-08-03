@@ -1,7 +1,12 @@
-#output_size
-n = 1000
+import sys
 
-file = open("input.dat", "w", -1)
+#output_size
+if len(sys.argv) < 2:
+    print("Usage: python input_generation.py size outputFile")
+    sys.exit()
+n = int(sys.argv[1])
+
+file = open(sys.argv[2], "w", -1)
 
 file.write("{0}\n".format(n))
 for i in range(n):
